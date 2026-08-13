@@ -99,4 +99,5 @@ export function mountApp(root: HTMLElement): void {
 
   controller.subscribe(render);
   render();
+  controller.init();
 }

@@ -38,9 +38,38 @@ export class MockMotionController {
   private state: PluginState = cloneState(initialState);
   private listeners = new Set<StateListener>();
 
-  private adapter = new PremiereAdapter();
+  private adapter: PremiereAdapter | null = null;
   private extractedMotion: ExtractedMotion | null = null;
   private bakedSamples: { time: number; value: MotionValue }[] | null = null;
+
+  public async init(): Promise<void> {
+    try {
+      this.adapter = new PremiereAdapter();
+      // Optional: probe to see if Premiere is available
+      // The user says "If Premiere API is unavailable, the panel should still render and show PREMIERE API ERROR"
+      // "If no active sequence: NO ACTIVE SEQUENCE"
+      // "If Premiere is available but no clip is selected: PREMIERE CONNECTED \n NO CLIP SELECTED"
+      try {
+        // Just calling extractKeyframes will probe the whole chain.
+        // Wait, probe just means checking what we can access.
+        this.adapter.extractKeyframes(this.state.property);
+        this.update({ status: { kind: "ready", message: "PREMIERE CONNECTED" } });
+      } catch (err: any) {
+        const msg = err.message || "ERROR";
+        if (msg.includes("require is not defined") || msg.includes("Cannot find module 'premierepro'")) {
+          this.update({ status: { kind: "error", message: "PREMIERE API ERROR" } });
+        } else if (msg.includes("No active sequence")) {
+          this.update({ status: { kind: "warning", message: "NO ACTIVE SEQUENCE" } });
+        } else if (msg.includes("No clip selected")) {
+          this.update({ status: { kind: "warning", message: "PREMIERE CONNECTED\nNO CLIP SELECTED" } });
+        } else {
+          this.update({ status: { kind: "ready", message: "PREMIERE CONNECTED" } });
+        }
+      }
+    } catch (err) {
+      this.update({ status: { kind: "error", message: "PREMIERE API ERROR" } });
+    }
+  }
 
   public getState(): PluginState {
     return cloneState(this.state);
@@ -146,7 +175,7 @@ export class MockMotionController {
       samples.push({ time: lastKey.time, value: lastKey.value as MotionValue });
 
       this.update({ bakedSamples: samples });
-      this.adapter.applyBakedMotion(this.state.extractedMotion.property, samples);
+      this.adapter?.applyBakedMotion(this.state.extractedMotion.property, samples);
       
       this.update({ status: { kind: "ready", message: `APPLIED — ${samples.length} KEYFRAMES` } });
     } catch (err: any) {
@@ -157,12 +186,15 @@ export class MockMotionController {
   public mockKeyframeAction(action: "extract" | "link" | "reset"): void {
     if (action === "extract") {
       try {
+        if (!this.adapter) throw new Error("PREMIERE API ERROR");
         const extractedMotion = this.adapter.extractKeyframes(this.state.property);
         this.update({ extractedMotion, status: { kind: "ready", message: "KEYFRAMES EXTRACTED" } });
       } catch (err: any) {
         const msg = err.message || "ERROR";
         this.update({ extractedMotion: null, bakedSamples: null });
-        if (msg.includes("No active sequence") || msg.includes("No clip selected")) {
+        if (msg.includes("require is not defined") || msg.includes("Cannot find module 'premierepro'")) {
+          this.update({ status: { kind: "error", message: "PREMIERE API ERROR" } });
+        } else if (msg.includes("No active sequence") || msg.includes("No clip selected")) {
           this.update({ status: { kind: "warning", message: "NO CLIP SELECTED" } });
         } else if (msg.includes("No keyframes")) {
           this.update({ status: { kind: "warning", message: "NO KEYFRAMES" } });
@@ -173,7 +205,7 @@ export class MockMotionController {
     } else if (action === "reset") {
       this.update({ status: { kind: "ready", message: "TIMELINE RESET — UI ONLY" } });
     } else {
-      this.update({ status: { kind: "warning", message: `${action.toUpperCase()} UNAVAILABLE` } });
+      this.update({ status: { kind: "warning", message: `${action.toUpperCase()} IS AN INTENTIONAL UNSUPPORTED FEATURE` } });
     }
   }
 
