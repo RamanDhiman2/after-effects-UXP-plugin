@@ -1,11 +1,18 @@
 import type { CurveControls, EasingPreset, PluginState, ScreenId } from "./types";
+import {
+  CUBIC_BEZIER_DEFAULT_CONTROLS,
+  createCubicBezierControls,
+  updateCubicBezierControlPoint,
+  type BezierPoint,
+  type CubicBezierControlPointId
+} from "../core/motion";
 
 type StateListener = (state: PluginState) => void;
 
 const initialState: PluginState = {
   activeScreen: "motion",
   property: "Position",
-  curve: { x1: 0.25, y1: 0.1, x2: 0.25, y2: 1 },
+  curve: { ...CUBIC_BEZIER_DEFAULT_CONTROLS },
   easing: "smooth",
   status: { kind: "ready", message: "READY" }
 };
@@ -19,8 +26,8 @@ function cloneState(state: PluginState): PluginState {
 }
 
 /**
- * UI-only controller. Future phases may connect it to motion-core and an adapter,
- * but this phase deliberately never reads or writes Premiere project data.
+ * Local controller. It owns UI state and Motion Core validation, but deliberately
+ * has no host adapter and never reads or writes Premiere project data.
  */
 export class MockMotionController {
   private state: PluginState = cloneState(initialState);
@@ -44,8 +51,26 @@ export class MockMotionController {
   }
 
   public updateCurve(control: keyof CurveControls, value: number): void {
-    if (!Number.isFinite(value)) return;
-    this.update({ curve: { ...this.state.curve, [control]: value } });
+    this.updateCurveValue(control, value, true);
+  }
+
+  public updateCurvePoint(
+    pointId: CubicBezierControlPointId,
+    point: BezierPoint,
+    options: { notify?: boolean } = {}
+  ): CurveControls {
+    const curve = updateCubicBezierControlPoint(this.state.curve, pointId, point);
+    this.setCurve(curve, options.notify ?? true);
+    return curve;
+  }
+
+  public resetCurve(): void {
+    this.setCurve(CUBIC_BEZIER_DEFAULT_CONTROLS, true);
+  }
+
+  public commitCurveInteraction(): void {
+    const snapshot = this.getState();
+    this.listeners.forEach((listener) => listener(snapshot));
   }
 
   public selectEasing(easing: EasingPreset): void {
@@ -67,8 +92,20 @@ export class MockMotionController {
     this.update({ status });
   }
 
-  private update(change: Partial<PluginState>): void {
+  private updateCurveValue(control: keyof CurveControls, value: number, notify: boolean): CurveControls | undefined {
+    if (!Number.isFinite(value)) return undefined;
+    const curve = createCubicBezierControls({ ...this.state.curve, [control]: value });
+    this.setCurve(curve, notify);
+    return curve;
+  }
+
+  private setCurve(curve: CurveControls, notify: boolean): void {
+    this.update({ curve: { ...curve }, easing: "custom" }, notify);
+  }
+
+  private update(change: Partial<PluginState>, notify = true): void {
     this.state = { ...this.state, ...change };
+    if (!notify) return;
     const snapshot = this.getState();
     this.listeners.forEach((listener) => listener(snapshot));
   }

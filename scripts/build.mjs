@@ -1,6 +1,7 @@
 import { readFile, mkdir, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, relative, resolve } from "node:path";
+import { existsSync } from "node:fs";
 import ts from "typescript";
 
 const projectRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -18,12 +19,23 @@ async function collectModule(filePath) {
   const source = await readFile(filePath, "utf8");
   modules.set(id, "");
   const imports = [...source.matchAll(/from\s+["'](\.[^"']+)["']/g)].map((match) => match[1]);
-  await Promise.all(imports.map((request) => collectModule(resolve(dirname(filePath), `${request}.ts`))));
+  await Promise.all(imports.map((request) => collectModule(resolveModulePath(filePath, request))));
 
   const javascript = ts.transpileModule(source, {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 }
   }).outputText;
   modules.set(id, javascript);
+}
+
+function resolveModulePath(parentPath, request) {
+  const unresolvedPath = resolve(dirname(parentPath), request);
+  const directPath = unresolvedPath.endsWith(".ts") ? unresolvedPath : `${unresolvedPath}.ts`;
+  if (existsSync(directPath)) return directPath;
+
+  const indexPath = resolve(unresolvedPath, "index.ts");
+  if (existsSync(indexPath)) return indexPath;
+
+  return directPath;
 }
 
 await collectModule(resolve(sourceRoot, "main.ts"));
@@ -48,7 +60,9 @@ const bundle = `(() => {
     factory(module.exports, (request) => {
       if (!request.startsWith(".")) throw new Error("Unsupported external module: " + request);
       const base = id.slice(0, id.lastIndexOf("/") + 1);
-      return load(normalize(base + request) + ".ts");
+      const directId = normalize(base + request) + ".ts";
+      const indexId = normalize(base + request + "/index.ts");
+      return load(modules[directId] ? directId : indexId);
     });
     return module.exports;
   };
