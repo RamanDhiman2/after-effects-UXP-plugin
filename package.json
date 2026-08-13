@@ -1,0 +1,15 @@
+{
+  "name": "notfakeplugdall",
+  "version": "0.1.0",
+  "private": true,
+  "description": "NotFakePlugdAll Premiere Pro UXP plugin UI shell.",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit",
+    "test": "node --test tests/*.test.mjs"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.0"
+  }
+}
