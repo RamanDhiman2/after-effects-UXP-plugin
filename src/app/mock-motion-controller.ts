@@ -3,9 +3,14 @@ import {
   CUBIC_BEZIER_DEFAULT_CONTROLS,
   createCubicBezierControls,
   updateCubicBezierControlPoint,
+  CubicBezier,
+  MotionCurve,
+  allEasings,
   type BezierPoint,
-  type CubicBezierControlPointId
+  type CubicBezierControlPointId,
+  type MotionValue
 } from "../core/motion";
+import { PremiereAdapter, type ExtractedMotion } from "./premiere-adapter";
 
 type StateListener = (state: PluginState) => void;
 
@@ -32,6 +37,10 @@ function cloneState(state: PluginState): PluginState {
 export class MockMotionController {
   private state: PluginState = cloneState(initialState);
   private listeners = new Set<StateListener>();
+
+  private adapter = new PremiereAdapter();
+  private extractedMotion: ExtractedMotion | null = null;
+  private bakedSamples: { time: number; value: MotionValue }[] | null = null;
 
   public getState(): PluginState {
     return cloneState(this.state);
@@ -78,18 +87,94 @@ export class MockMotionController {
   }
 
   public preview(): void {
-    this.update({ status: { kind: "preview", message: "PREVIEW READY" } });
+    if (this.state.extractedMotion) {
+      this.update({ status: { kind: "preview", message: "READY TO PREVIEW" } });
+    } else {
+      this.update({ status: { kind: "preview", message: "PREVIEW READY" } });
+    }
   }
 
   public apply(): void {
-    this.update({ status: { kind: "warning", message: "APPLY DISABLED — Motion Engine Not Connected" } });
+    try {
+      if (!this.state.extractedMotion) {
+        throw new Error("NO KEYFRAMES EXTRACTED");
+      }
+
+      this.update({ status: { kind: "ready", message: "BAKING MOTION..." } }, true);
+
+      // Perform baking
+      const ticksPerFrame = this.state.extractedMotion.timebase;
+      const kfs = this.state.extractedMotion.keyframes;
+      if (kfs.length < 2) {
+        throw new Error("AT LEAST 2 KEYFRAMES REQUIRED");
+      }
+
+      const samples: { time: number; value: MotionValue }[] = [];
+      
+      // Calculate easing function
+      let easingFn;
+      if (this.state.easing === "custom") easingFn = new CubicBezier(this.state.curve);
+      else if (this.state.easing === "smooth") easingFn = allEasings.easeInOut;
+      else if (this.state.easing === "bounce") easingFn = allEasings.bounceOut;
+      else if (this.state.easing === "elastic") easingFn = allEasings.elasticOut;
+      else if (this.state.easing === "spring") easingFn = allEasings.springOut;
+      else easingFn = allEasings.linear;
+
+      for (let i = 0; i < kfs.length - 1; i++) {
+        const startKey = kfs[i];
+        const endKey = kfs[i + 1];
+        
+        const duration = endKey.time - startKey.time;
+        if (duration <= 0) continue;
+
+        const curve = new MotionCurve({
+          startValue: startKey.value as MotionValue,
+          endValue: endKey.value as MotionValue,
+          duration: duration,
+          easing: easingFn
+        });
+
+        // Evaluate at every sequence frame
+        for (let time = startKey.time; time < endKey.time; time += ticksPerFrame) {
+          const t = time - startKey.time;
+          samples.push({ time, value: curve.evaluate(t) });
+        }
+      }
+      
+      // Ensure the very last keyframe is added exactly
+      const lastKey = kfs[kfs.length - 1];
+      samples.push({ time: lastKey.time, value: lastKey.value as MotionValue });
+
+      this.update({ bakedSamples: samples });
+      this.adapter.applyBakedMotion(this.state.extractedMotion.property, samples);
+      
+      this.update({ status: { kind: "ready", message: `APPLIED — ${samples.length} KEYFRAMES` } });
+    } catch (err: any) {
+      this.update({ status: { kind: "error", message: err.message || "ERROR" } });
+    }
   }
 
   public mockKeyframeAction(action: "extract" | "link" | "reset"): void {
-    const status = action === "reset"
-      ? { kind: "ready" as const, message: "TIMELINE RESET — UI ONLY" }
-      : { kind: "warning" as const, message: `${action.toUpperCase()} UNAVAILABLE — Premiere Not Connected` };
-    this.update({ status });
+    if (action === "extract") {
+      try {
+        const extractedMotion = this.adapter.extractKeyframes(this.state.property);
+        this.update({ extractedMotion, status: { kind: "ready", message: "KEYFRAMES EXTRACTED" } });
+      } catch (err: any) {
+        const msg = err.message || "ERROR";
+        this.update({ extractedMotion: null, bakedSamples: null });
+        if (msg.includes("No active sequence") || msg.includes("No clip selected")) {
+          this.update({ status: { kind: "warning", message: "NO CLIP SELECTED" } });
+        } else if (msg.includes("No keyframes")) {
+          this.update({ status: { kind: "warning", message: "NO KEYFRAMES" } });
+        } else {
+          this.update({ status: { kind: "error", message: msg } });
+        }
+      }
+    } else if (action === "reset") {
+      this.update({ status: { kind: "ready", message: "TIMELINE RESET — UI ONLY" } });
+    } else {
+      this.update({ status: { kind: "warning", message: `${action.toUpperCase()} UNAVAILABLE` } });
+    }
   }
 
   private updateCurveValue(control: keyof CurveControls, value: number, notify: boolean): CurveControls | undefined {

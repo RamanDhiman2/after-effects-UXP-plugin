@@ -10,6 +10,9 @@ export function renderMotionScreen(state: PluginState): string {
     ${renderPropertySelector(state.property)}
     ${renderCurveEditor(state.curve)}
     ${renderEasingPresets(state.easing)}
+    <div class="preview-stage" aria-label="Motion preview simulation">
+      <div class="preview-box"></div>
+    </div>
     ${renderActionButtons()}
     ${renderKeyframePanel()}
   </section>`;

@@ -88,6 +88,106 @@ export const back: EasingFamily = {
   ))
 };
 
+/** Bounce curves simulate physical bouncing collisions. */
+function createBounceFamily(bounces = 3, elasticity = 0.65): EasingFamily {
+  let sum = 1;
+  for (let i = 1; i <= bounces; i += 1) {
+    sum += 2 * Math.pow(elasticity, i / 2);
+  }
+  const t0 = 1 / sum;
+
+  const phases = [{ start: 0, end: t0, peak: 0, height: 1 }];
+  let start = t0;
+  for (let i = 1; i <= bounces; i += 1) {
+    const t = t0 * Math.pow(elasticity, i / 2);
+    const h = Math.pow(elasticity, i);
+    phases.push({ start, end: start + 2 * t, peak: start + t, height: h });
+    start += 2 * t;
+  }
+
+  const evaluateOut = (time: number) => {
+    if (time === 0 || time === 1) return time;
+    for (let i = 0; i < phases.length; i += 1) {
+      const p = phases[i];
+      if (time <= p.end) {
+        if (i === 0) return (time / p.end) ** 2;
+        const normalized = (time - p.peak) / (p.peak - p.start);
+        return 1 - p.height * (1 - normalized ** 2);
+      }
+    }
+    return 1;
+  };
+
+  return {
+    in: createEasing("bounce.in", (time) => 1 - evaluateOut(1 - time)),
+    out: createEasing("bounce.out", evaluateOut),
+    inOut: createEasing("bounce.inOut", (time) =>
+      time < 0.5
+        ? (1 - evaluateOut(1 - 2 * time)) / 2
+        : (1 + evaluateOut(2 * time - 1)) / 2
+    )
+  };
+}
+export const bounce = createBounceFamily();
+
+/** Elastic curves simulate a stretched band oscillating back to its rest position. */
+function createElasticFamily(amplitude = 1, period = 0.3): EasingFamily {
+  const a = Math.max(1, amplitude);
+  const s = (period / (2 * Math.PI)) * Math.asin(1 / a);
+
+  const evaluateOut = (time: number) => {
+    if (time === 0 || time === 1) return time;
+    return a * Math.pow(2, -10 * time) * Math.sin(((time - s) * (2 * Math.PI)) / period) + 1;
+  };
+  const evaluateIn = (time: number) => {
+    if (time === 0 || time === 1) return time;
+    const t = time - 1;
+    return -(a * Math.pow(2, 10 * t) * Math.sin(((t - s) * (2 * Math.PI)) / period));
+  };
+  const evaluateInOut = (time: number) => {
+    if (time === 0 || time === 1) return time;
+    const t = time * 2 - 1;
+    if (t < 0) {
+      return -0.5 * (a * Math.pow(2, 10 * t) * Math.sin(((t - s) * (2 * Math.PI)) / period));
+    }
+    return a * Math.pow(2, -10 * t) * Math.sin(((t - s) * (2 * Math.PI)) / period) * 0.5 + 1;
+  };
+
+  return {
+    in: createEasing("elastic.in", evaluateIn),
+    out: createEasing("elastic.out", evaluateOut),
+    inOut: createEasing("elastic.inOut", evaluateInOut)
+  };
+}
+export const elastic = createElasticFamily();
+
+/** Spring curves simulate physics-based dampened harmonic oscillators. */
+function createSpringFamily(mass = 1, stiffness = 100, damping = 10): EasingFamily {
+  const w0 = Math.sqrt(stiffness / mass);
+  const zeta = damping / (2 * Math.sqrt(stiffness * mass));
+
+  const evaluateOut = (time: number) => {
+    if (time === 0 || time === 1) return time;
+    if (zeta < 1) {
+      const wd = w0 * Math.sqrt(1 - zeta * zeta);
+      const b = (zeta * w0) / wd;
+      return 1 - Math.exp(-zeta * w0 * time) * (Math.cos(wd * time) + b * Math.sin(wd * time));
+    }
+    return 1 - Math.exp(-w0 * time) * (1 + w0 * time);
+  };
+
+  return {
+    in: createEasing("spring.in", (time) => 1 - evaluateOut(1 - time)),
+    out: createEasing("spring.out", evaluateOut),
+    inOut: createEasing("spring.inOut", (time) =>
+      time < 0.5
+        ? (1 - evaluateOut(1 - 2 * time)) / 2
+        : (1 + evaluateOut(2 * time - 1)) / 2
+    )
+  };
+}
+export const spring = createSpringFamily();
+
 /** Every available easing is exported once for consumers, tests, and future UI mapping. */
 export const allEasings = Object.freeze({
   linear,
@@ -117,5 +217,14 @@ export const allEasings = Object.freeze({
   circInOut: circ.inOut,
   backIn: back.in,
   backOut: back.out,
-  backInOut: back.inOut
+  backInOut: back.inOut,
+  bounceIn: bounce.in,
+  bounceOut: bounce.out,
+  bounceInOut: bounce.inOut,
+  elasticIn: elastic.in,
+  elasticOut: elastic.out,
+  elasticInOut: elastic.inOut,
+  springIn: spring.in,
+  springOut: spring.out,
+  springInOut: spring.inOut
 });

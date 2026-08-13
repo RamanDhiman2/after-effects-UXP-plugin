@@ -18,4 +18,6 @@ export interface PluginState {
     kind: StatusKind;
     message: string;
   };
+  extractedMotion?: { property: string; keyframes: { time: number; value: number | readonly number[] }[]; timebase: number } | null;
+  bakedSamples?: { time: number; value: number | readonly number[] }[] | null;
 }

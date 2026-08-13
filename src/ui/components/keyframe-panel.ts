@@ -3,7 +3,7 @@ export function renderKeyframePanel(): string {
     <section class="keyframe-panel panel-section" aria-labelledby="keyframe-title">
       <div class="section-heading"><span id="keyframe-title">KEYFRAMES</span><span class="section-note">MOCK TIMELINE</span></div>
       <div class="mock-timeline" aria-label="Visual keyframe timeline mockup">
-        <span class="timeline-line"></span><span class="keyframe-dot"></span><span class="keyframe-dot"></span><span class="keyframe-dot"></span>
+        <span class="timeline-line"></span><span class="timeline-playhead"></span><span class="keyframe-dot"></span><span class="keyframe-dot"></span><span class="keyframe-dot"></span>
       </div>
       <div class="keyframe-actions">
         <button type="button" data-keyframe-action="extract">EXTRACT</button>

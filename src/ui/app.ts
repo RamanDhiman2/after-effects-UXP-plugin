@@ -6,6 +6,7 @@ import { renderStatusBar } from "./components/status-bar";
 import { bindCurveEditor } from "./components/curve-editor";
 import { renderMotionScreen } from "./screens/motion-screen";
 import { renderPlaceholderScreen } from "./screens/placeholder-screen";
+import { PreviewController } from "./preview-controller";
 
 function closestElement(target: EventTarget | null, selector: string): HTMLElement | null {
   let element = target as HTMLElement | null;
@@ -33,14 +34,20 @@ function renderApplicationFallback(message: string): string {
 
 export function mountApp(root: HTMLElement): void {
   const controller = new MockMotionController();
+  const previewController = new PreviewController(() => controller.getState());
+  
   const render = () => {
+    previewController.detach();
     try {
       const state = controller.getState();
       const screen = state.activeScreen === "motion"
         ? renderMotionScreen(state)
         : renderPlaceholderScreen(state.activeScreen);
       root.innerHTML = `<div class="plugin-shell">${renderHeader()}${renderNavigation(state.activeScreen)}<div class="screen-content">${screen}</div>${renderStatusBar(state.status)}</div>`;
-      bindCurveEditor(root, controller);
+      bindCurveEditor(root, controller, () => previewController.syncWithStateChange());
+      if (state.activeScreen === "motion") {
+        previewController.attach(root);
+      }
     } catch (error) {
       root.innerHTML = renderApplicationFallback(safeErrorMessage(error));
     }
@@ -54,13 +61,26 @@ export function mountApp(root: HTMLElement): void {
     if (easing) controller.selectEasing(easing);
 
     const action = closestElement(event.target, "[data-action]")?.getAttribute("data-action");
-    if (action === "preview") controller.preview();
+    if (action === "preview") previewController.togglePlay();
     if (action === "apply") controller.apply();
     if (action === "reset-curve") controller.resetCurve();
     if (action === "reload-panel") render();
 
     const keyframeAction = closestElement(event.target, "[data-keyframe-action]")?.getAttribute("data-keyframe-action") as "extract" | "link" | "reset" | undefined;
-    if (keyframeAction) controller.mockKeyframeAction(keyframeAction);
+    if (keyframeAction) {
+      if (keyframeAction === "reset") previewController.reset();
+      controller.mockKeyframeAction(keyframeAction);
+    }
+
+    const timeline = closestElement(event.target, ".mock-timeline");
+    if (timeline) {
+      const rect = timeline.getBoundingClientRect();
+      const clickX = (event as MouseEvent).clientX - rect.left;
+      const startX = rect.width * 0.14;
+      const range = rect.width * 0.72;
+      const progress = (clickX - startX) / range;
+      previewController.scrub(progress);
+    }
   });
 
   root.addEventListener("change", (event) => {

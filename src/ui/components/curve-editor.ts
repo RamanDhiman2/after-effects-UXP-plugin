@@ -119,7 +119,7 @@ function updateCurveEditorDom(editor: HTMLElement, curve: CurveControls): void {
   });
 }
 
-export function bindCurveEditor(root: HTMLElement, controller: MockMotionController): void {
+export function bindCurveEditor(root: HTMLElement, controller: MockMotionController, onDragUpdate?: () => void): void {
   const editor = root.querySelector<HTMLElement>("[data-curve-editor]");
   const svg = editor?.querySelector<SVGSVGElement>("[data-curve-svg]");
   if (!editor || !svg) return;
@@ -152,6 +152,7 @@ export function bindCurveEditor(root: HTMLElement, controller: MockMotionControl
     );
     const curve = controller.updateCurvePoint(activePoint, normalizedPoint, { notify: false });
     scheduleUpdate(curve);
+    if (onDragUpdate) onDragUpdate();
   };
 
   svg.addEventListener("pointerdown", (event) => {
